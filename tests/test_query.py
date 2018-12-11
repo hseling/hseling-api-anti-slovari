@@ -1,6 +1,6 @@
 import pytest
 
-from hseling_api_template.query import query_data
+from hseling_api_anti_slovari.query import query_data
 
 
 test_data = [
