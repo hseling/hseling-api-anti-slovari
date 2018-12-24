@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_file
 from logging import getLogger
 
 import boilerplate
@@ -59,11 +59,22 @@ def upload_endpoint():
     return boilerplate.get_upload_form()
 
 
-@app.route('/files/<path:file_id>')
-def get_file_endpoint(file_id):
-    if file_id in boilerplate.list_files(recursive=True):
-        return boilerplate.get_file(file_id)
-    return jsonify({'error': boilerplate.ERROR_NO_SUCH_FILE})
+# @app.route('/files/<path:file_id>')
+# def get_file_endpoint(file_id):
+#     if file_id in boilerplate.list_files(recursive=True):
+#         return boilerplate.get_file(file_id)
+#     return jsonify({'error': boilerplate.ERROR_NO_SUCH_FILE})
+
+
+@app_route("/get_file")
+def get_file_endpoint():
+    if request.method == 'POST':
+        file_id = request.json['file']
+        if file_id in boilerplate.list_files(recursive=True):
+            processed_file = boilerplate.get_file(file_id)
+            send_file(processed_file, mimetype='text/csv',
+                             attachment_filename=file_id, as_attachment=True)
+        return jsonify({'error': boilerplate.ERROR_NO_SUCH_FILE})
 
 
 @app.route('/files')
@@ -79,17 +90,40 @@ def process_endpoint(file_ids=None):
     return jsonify({"task_id": str(task)})
 
 
-@app.route("/query/<path:file_id>")
-def query_endpoint(file_id):
-    query_type = request.args.get('type')
-    if not query_type:
-        return jsonify({"error": boilerplate.ERROR_NO_QUERY_TYPE_SPECIFIED})
-    processed_file_id = boilerplate.PROCESSED_PREFIX + file_id
-    if processed_file_id in boilerplate.list_files(recursive=True):
-        return jsonify({"result": query_data({
-            processed_file_id: boilerplate.get_file(processed_file_id)
-        }, query_type=query_type)})
-    return jsonify({"error": boilerplate.ERROR_NO_SUCH_FILE})
+# @app.route("/query/<path:file_id>")
+# def query_endpoint(file_id):
+#     query_type = request.args.get('type')
+#     if not query_type:
+#         return jsonify({"error": boilerplate.ERROR_NO_QUERY_TYPE_SPECIFIED})
+#     processed_file_id = boilerplate.PROCESSED_PREFIX + file_id
+#     if processed_file_id in boilerplate.list_files(recursive=True):
+#         return jsonify({"result": query_data({
+#             processed_file_id: boilerplate.get_file(processed_file_id)
+#         }, query_type=query_type)})
+#     return jsonify({"error": boilerplate.ERROR_NO_SUCH_FILE})
+
+
+@app.route("/query")
+def query_endpoint():
+    if request.method == 'POST':
+        conn = boilerplate.get_mysql_connection()
+        cur = conn.cursor(prepared=True)
+        if request.json['base'] == 'all':
+            tables = ['main'] # FIXME
+        else:
+            tables = request.json['tables']
+        res = []
+        string = request.json['string']
+        for table in tables:
+            if request.json['regexp']:
+                cur.execute("SELECT column FROM ? WHERE column REGEXP ?", (table, string))
+            else:
+                cur.execute("SELECT column FROM ? WHERE column LIKE ?", (table, string))
+            res += cur.fetchall()
+        # return jsonify({"result": res})
+        with open('results.csv', 'w') as f:
+            f.write('\n'.join(res))
+        return send_file('results.csv')
 
 
 @app.route("/status/<task_id>")
