@@ -59,15 +59,15 @@ def upload_endpoint():
     return boilerplate.get_upload_form()
 
 
-# @app.route('/files/<path:file_id>')
-# def get_file_endpoint(file_id):
-#     if file_id in boilerplate.list_files(recursive=True):
-#         return boilerplate.get_file(file_id)
-#     return jsonify({'error': boilerplate.ERROR_NO_SUCH_FILE})
+@app.route('/files/<path:file_id>')
+def get_file_endpoint(file_id):
+    if file_id in boilerplate.list_files(recursive=True):
+        return boilerplate.get_file(file_id)
+    return jsonify({'error': boilerplate.ERROR_NO_SUCH_FILE})
 
 
-@app_route("/get_file")
-def get_file_endpoint():
+@app.route("/load_file")
+def load_file_endpoint():
     if request.method == 'POST':
         file_id = request.json['file']
         if file_id in boilerplate.list_files(recursive=True):
@@ -75,6 +75,7 @@ def get_file_endpoint():
             send_file(processed_file, mimetype='text/csv',
                              attachment_filename=file_id, as_attachment=True)
         return jsonify({'error': boilerplate.ERROR_NO_SUCH_FILE})
+    return jsonify({'error': boilerplate.ERROR_NO_SUCH_FILE})
 
 
 @app.route('/files')
@@ -124,6 +125,8 @@ def query_endpoint():
         with open('results.csv', 'w') as f:
             f.write('\n'.join(res))
         return send_file('results.csv')
+    else:
+        jsonify({"error": boilerplate.ERROR_NO_SUCH_FILE})
 
 
 @app.route("/status/<task_id>")
