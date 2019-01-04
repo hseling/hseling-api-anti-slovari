@@ -1,5 +1,6 @@
-from flask import Flask, jsonify, request, send_file
+from flask import Flask, jsonify, request, send_file, redirect, url_for
 from logging import getLogger
+import os
 
 import boilerplate
 
@@ -66,13 +67,18 @@ def get_file_endpoint(file_id):
     return jsonify({'error': boilerplate.ERROR_NO_SUCH_FILE})
 
 
-@app.route("/load_file")
+@app.route("/load_file", methods=['GET', 'POST'])
 def load_file_endpoint():
     if request.method == 'POST':
+        print('here')
         file_id = request.json['file']
+        print(file_id)
         if file_id in boilerplate.list_files(recursive=True):
-            processed_file = boilerplate.get_file(file_id)
-            send_file(processed_file, mimetype='text/csv',
+            # processed_file = boilerplate.get_file(file_id)
+            # print(processed_file.__class__)
+            # address = os.path.join('/data', 'minio', file_id)
+            # f = boilerplate.get_file(file_id)
+            return send_file(file_id, mimetype='text/csv',
                              attachment_filename=file_id, as_attachment=True)
         return jsonify({'error': boilerplate.ERROR_NO_SUCH_FILE})
     return jsonify({'error': boilerplate.ERROR_NO_SUCH_FILE})
@@ -104,29 +110,45 @@ def process_endpoint(file_ids=None):
 #     return jsonify({"error": boilerplate.ERROR_NO_SUCH_FILE})
 
 
-@app.route("/query")
+def safe_check(arr):
+    '''проверка полученных параметров на безопасность'''
+    checker = set(['dim', 'nonsense', 'vowel_seq', 'stop_seq', 'loan_affix'])
+    if len(set(arr) - checker) > 0:
+        return False
+    return True
+
+
+@app.route("/query", methods=['GET', 'POST'])
 def query_endpoint():
     if request.method == 'POST':
         conn = boilerplate.get_mysql_connection()
-        cur = conn.cursor(prepared=True)
+        cur = conn.cursor()
         if request.json['base'] == 'all':
-            tables = ['main'] # FIXME
+            tables = ['main']
         else:
-            tables = request.json['tables']
+            # проверяем, одна таблица или несколько
+            if isinstance(request.json['tables'], str):
+                tables = [request.json['tables'],]
+            else:
+                tables = request.json['tables']
         res = []
+        if not safe_check(tables):
+            return jsonify({"error": boilerplate.ERROR_NO_SUCH_FILE})
         string = request.json['string']
         for table in tables:
-            if request.json['regexp']:
-                cur.execute("SELECT column FROM ? WHERE column REGEXP ?", (table, string))
+            if 'regexp' in request.json:
+                sql = "SELECT word FROM `hse-api-database`.{} WHERE word REGEXP %s".format(table)
+                cur.execute(sql, string)
             else:
-                cur.execute("SELECT column FROM ? WHERE column LIKE ?", (table, string))
+                string = '%{}%'.format(string)
+                sql = "SELECT word FROM `hse-api-database`.{} WHERE word LIKE %(string)s".format(table)
+                cur.execute(sql, {'string': string})
             res += cur.fetchall()
-        # return jsonify({"result": res})
         with open('results.csv', 'w') as f:
-            f.write('\n'.join(res))
+            f.write('\n'.join([x[0] for x in res]))
         return send_file('results.csv')
     else:
-        jsonify({"error": boilerplate.ERROR_NO_SUCH_FILE})
+        return jsonify({"error": boilerplate.ERROR_NO_SUCH_FILE})
 
 
 @app.route("/status/<task_id>")
@@ -138,11 +160,42 @@ def status_endpoint(task_id):
 def test_mysql_endpoint():
     conn = boilerplate.get_mysql_connection()
     cur = conn.cursor()
-    cur.execute("SELECT table_name, column_name FROM INFORMATION_SCHEMA.COLUMNS")
+    cur.execute("show tables in `hse-api-database`")
     schema = dict()
-    for table_name, column_name in cur.fetchall():
-        schema.setdefault(table_name.decode('utf-8'), []).append(column_name)
+    for table_name in cur.fetchall():
+        schema.setdefault(table_name[0].decode('utf-8'), [])
     return jsonify({"schema": schema})
+
+
+@app.route("/upload_mysql")
+def upload_mysql_endpoint():
+    conn = boilerplate.get_mysql_connection()
+    cur = conn.cursor()
+    files = boilerplate.list_files(recursive=True)
+    for file in files:
+        print(file)
+        name = file[:-4]
+        print(name)
+        cur.execute("SELECT table_name from information_schema.tables where \
+            table_schema = 'hse-api-database' and table_name = '%s'", name)
+        resp = cur.fetchone()
+        print(resp)
+        if not resp:
+            text = boilerplate.get_file(file).decode('utf-8')
+            f = [tuple(x.split(',')[1:]) for x in text.split('\n')[1:300]]
+            print(f[:5])
+            cur.execute("CREATE TABLE `hse-api-database`.{} \
+                (word varchar(300), lemma varchar(300), morphs varchar(300), category varchar(100))".format(name))
+            for tup in f:
+                try:
+                    cur.execute("INSERT INTO `hse-api-database`.{}(word,lemma,morphs,category)\
+                        VALUES(%s, %s, %s, %s)".format(name), tup)
+                except:
+                    print(tup)
+                    raise
+    # conn.commit()
+    # conn.close()
+    return redirect(url_for('test_mysql_endpoint'))
 
 
 def get_endpoints(ctx):
