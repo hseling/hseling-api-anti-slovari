@@ -32,16 +32,21 @@ def process_task(file_ids_list=None):
                             if (boilerplate.UPLOAD_PREFIX + file_id)
                             in files_to_process]
     data_to_process = {file_id[len(boilerplate.UPLOAD_PREFIX):]:
-                       boilerplate.get_file(file_id)
+                       boilerplate.get_file(file_id).decode('utf-8')
                        for file_id in files_to_process}
     processed_file_ids = list()
-    for processed_file_id, contents in process_data(data_to_process):
-        processed_file_ids.append(
-            boilerplate.add_processed_file(
-                processed_file_id,
-                contents,
-                extension='txt'
-            ))
+    files = boilerplate.list_files(recursive=True)
+    print('HEYY')
+    for file in files:
+        print('first')
+        process_data(file)
+        processed_file_ids.append(file)
+            # boilerplate.add_processed_file(
+            #     processed_file_id,
+            #     contents,
+            #     extension='txt'
+            # )
+
     return processed_file_ids
 
 
@@ -112,7 +117,7 @@ def process_endpoint(file_ids=None):
 
 def safe_check(arr):
     '''проверка полученных параметров на безопасность'''
-    checker = set(['dim', 'nonsense', 'vowel_seq', 'stop_seq', 'loan_affix'])
+    checker = set(['dim', 'nonsense', 'vowel_seq', 'stop_seq', 'loan_affix', 'main'])
     if len(set(arr) - checker) > 0:
         return False
     return True
@@ -123,6 +128,7 @@ def query_endpoint():
     if request.method == 'POST':
         conn = boilerplate.get_mysql_connection()
         cur = conn.cursor()
+        print(request.json)
         if request.json['base'] == 'all':
             tables = ['main']
         else:
@@ -136,17 +142,20 @@ def query_endpoint():
             return jsonify({"error": boilerplate.ERROR_NO_SUCH_FILE})
         string = request.json['string']
         for table in tables:
+            print(table)
             if 'regexp' in request.json:
-                sql = "SELECT word FROM `hse-api-database`.{} WHERE word REGEXP %s".format(table)
-                cur.execute(sql, string)
+                sql = "SELECT word FROM `hse-api-database`.{} WHERE word REGEXP %(string)s;".format(table)
+                cur.execute(sql, {'string': string})
             else:
                 string = '%{}%'.format(string)
                 sql = "SELECT word FROM `hse-api-database`.{} WHERE word LIKE %(string)s".format(table)
+                print(sql)
                 cur.execute(sql, {'string': string})
-            res += cur.fetchall()
+            res += [x[0] for x in cur.fetchall()]
+            print(res)
         with open('results.csv', 'w') as f:
-            f.write('\n'.join([x[0] for x in res]))
-        return send_file('results.csv')
+            f.write('\n'.join(res))
+        return '\n'.join(res)
     else:
         return jsonify({"error": boilerplate.ERROR_NO_SUCH_FILE})
 
@@ -169,30 +178,33 @@ def test_mysql_endpoint():
 
 @app.route("/upload_mysql")
 def upload_mysql_endpoint():
-    conn = boilerplate.get_mysql_connection()
-    cur = conn.cursor()
-    files = boilerplate.list_files(recursive=True)
-    for file in files:
-        print(file)
-        name = file[:-4]
-        print(name)
-        cur.execute("SELECT table_name from information_schema.tables where \
-            table_schema = 'hse-api-database' and table_name = '%s'", name)
-        resp = cur.fetchone()
-        print(resp)
-        if not resp:
-            text = boilerplate.get_file(file).decode('utf-8')
-            f = [tuple(x.split(',')[1:]) for x in text.split('\n')[1:300]]
-            print(f[:5])
-            cur.execute("CREATE TABLE `hse-api-database`.{} \
-                (word varchar(300), lemma varchar(300), morphs varchar(300), category varchar(100))".format(name))
-            for tup in f:
-                try:
-                    cur.execute("INSERT INTO `hse-api-database`.{}(word,lemma,morphs,category)\
-                        VALUES(%s, %s, %s, %s)".format(name), tup)
-                except:
-                    print(tup)
-                    raise
+    process_task()
+    # conn = boilerplate.get_mysql_connection()
+    # cur = conn.cursor()
+    # files = boilerplate.list_files(recursive=True)
+    # for file in files:
+    #     print(file)
+    #     name = file[:-4]
+    #     print(name)
+    #     cur.execute("SELECT table_name from information_schema.tables where \
+    #         table_schema = 'hse-api-database' and table_name = '%s'", name)
+    #     resp = cur.fetchone()
+    #     print(resp)
+    #     try:
+    #         text = boilerplate.get_file(file).decode('utf-8')
+    #         f = [tuple(x.split(',')[1:]) for x in text.split('\n')[1:300]]
+    #         print(f[:5])
+    #         cur.execute("CREATE TABLE `hse-api-database`.{} \
+    #             (word varchar(300), lemma varchar(300), morphs varchar(300), category varchar(100))".format(name))
+    #         for tup in f:
+    #             try:
+    #                 cur.execute("INSERT INTO `hse-api-database`.{}(word,lemma,morphs,category)\
+    #                     VALUES(%s, %s, %s, %s)".format(name), tup)
+    #             except:
+    #                 print(tup)
+    #                 raise
+    #     except:
+    #         continue
     # conn.commit()
     # conn.close()
     return redirect(url_for('test_mysql_endpoint'))

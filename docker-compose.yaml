@@ -27,8 +27,11 @@ services:
   environment: *common-variables
 
  hse-api-celery:
+  # image: celery
   build: .
   command: celery -A main.celery worker
+  # volumes:
+  #  - redis:/data
   links:
    - redis
    - minio
@@ -41,17 +44,23 @@ services:
    - data:/data
   ports:
    - "9000:9000"
-  command: server /data/minio
+  command: server ./dbminio/minio
   environment: *common-variables
 
  mysql:
   image: mysql
+  # volumes:
+  #  - mysqldata:/var/lib/mysql
   command: --default-authentication-plugin=mysql_native_password
   restart: always
   environment: *common-variables
 
  redis:
   image: redis:latest
+  # volumes:
+  #  - redis:/data
 
 volumes:
+  # mysqldata:
   data:
+  # redis:
