@@ -15,6 +15,9 @@ COPY --from=build /usr/lib/python3.6/site-packages /usr/lib/python3.6/site-packa
 
 COPY --from=build /dependencies /dependencies
 
+VOLUME ./data
+COPY ./antislovari.sql /docker-entrypoint-initdb.d/antislovari.sql
+
 COPY ./hseling_api_anti_slovari /dependencies/hseling_api_anti_slovari
 RUN pip install /dependencies
 
