@@ -9,5 +9,9 @@ build
 dist
 /venv/
 .env
+app/main.csv
+antislovari.sql
+dbminio/
+dbmysql/
 !.gitignore
 !.travis*
