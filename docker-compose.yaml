@@ -44,7 +44,7 @@ services:
    - data:/data
   ports:
    - "9000:9000"
-  command: server ./dbminio/minio
+  command: server /data/minio
   environment: *common-variables
 
  mysql:
